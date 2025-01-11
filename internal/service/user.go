@@ -15,6 +15,7 @@ var ErrInvalidUserOrPassword = errors.New("账号/邮箱或密码不对")
 type UserService interface {
 	Login(ctx context.Context, email string, password string) (domain.User, error)
 	SignUp(ctx context.Context, user domain.User) error
+	FindOrCreate(ctx context.Context, phone string) (domain.User, error)
 }
 
 type userService struct {
@@ -42,6 +43,7 @@ func (svc *userService) Login(ctx context.Context, email string, password string
 	return u, nil
 
 }
+
 func (svc *userService) SignUp(ctx context.Context, user domain.User) error {
 	hash, err := bcrypt.GenerateFromPassword([]byte(user.Password), bcrypt.DefaultCost)
 	if err != nil {
@@ -50,4 +52,23 @@ func (svc *userService) SignUp(ctx context.Context, user domain.User) error {
 	user.Password = string(hash)
 
 	return svc.repo.Create(ctx, user)
+}
+
+// 通过Unique索引保证 check and set的原子性 如果加锁，会导致性能问题，通过都是从快路径出
+func (svc *userService) FindOrCreate(ctx context.Context, phone string) (domain.User, error) {
+	u, err := svc.repo.FindByPhone(ctx, phone)
+	// 快路径
+	if err != repository.ErrUserNotFound {
+		// 找到用户或者存在错误
+		return u, err
+	}
+	u = domain.User{
+		Phone: phone,
+	}
+	err = svc.repo.Create(ctx, u)
+	if err != nil && err != repository.ErrUserDuplicate {
+		return u, err
+	}
+	// 可能会遇到主从延迟
+	return svc.repo.FindByPhone(ctx, phone)
 }

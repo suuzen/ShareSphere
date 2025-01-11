@@ -8,8 +8,10 @@ package main
 
 import (
 	"ShareSphere/V0/internal/repository"
+	"ShareSphere/V0/internal/repository/cache"
 	"ShareSphere/V0/internal/repository/dao"
 	"ShareSphere/V0/internal/service"
+	"ShareSphere/V0/internal/service/sms"
 	"ShareSphere/V0/internal/web"
 	"ShareSphere/V0/ioc"
 	"github.com/gin-gonic/gin"
@@ -23,7 +25,12 @@ func InitWebServer() *gin.Engine {
 	userDao := dao.NewGORMUserDao(db)
 	userRepository := repository.NewUserRepository(userDao)
 	userService := service.NewUserService(userRepository)
-	userHandler := web.NewUserHandler(userService)
+	smsService := sms.NewSmsService()
+	cmdable := ioc.InitRedis()
+	codeCache := cache.NewCodeCache(cmdable)
+	codeRepository := repository.NewCodeRepository(codeCache)
+	codeService := service.NewCodeService(smsService, codeRepository)
+	userHandler := web.NewUserHandler(userService, codeService)
 	engine := ioc.InitWebServer(v, userHandler)
 	return engine
 }
